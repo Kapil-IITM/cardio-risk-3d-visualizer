@@ -17,12 +17,12 @@ def preprocess(data):
     X["BBB"] = pd.Categorical(X["BBB"], categories=["N", "LBBB", "RBBB"])
     X["Region RWMA"] = pd.Categorical(X["Region RWMA"], categories=[0, 1, 2, 3, 4])
     X = pd.get_dummies(X, columns=["BBB", "Region RWMA"], dtype=int)
-    assert X.isnull().sum().sum() == 0, "Mapping mein spelling mismatch"
+    assert X.isnull().sum().sum() == 0, "Encoding produced NaN: check spelling of categorical values"
     return X
 
 def prepare(data, feature_columns):
     data = data.copy()
-    for c in ["Obesity", "CHF", "LowTH Ang"]:     # model mein nahi hain, form mein bhi nahi
+    for c in ["Obesity", "CHF", "LowTH Ang"]:
         if c not in data.columns:
             data[c] = "N"
     X = preprocess(data)

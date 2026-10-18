@@ -15,11 +15,11 @@ ROOT = Path(__file__).resolve().parent.parent
 ML_DIR = ROOT / "ml_pipeline"
 MODELS = ML_DIR / "models"
 sys.path.insert(0, str(ML_DIR))
-import pipeline                                   
+import pipeline                                   # preprocess() / prepare() live here
 
 TARGETS = ["Cath", "LAD", "LCX", "RCA"]
 
-
+# ---------- Load everything once at startup ----------
 FEATURE_COLUMNS = joblib.load(MODELS / "feature_columns.pkl")
 SCHEMA = json.loads((MODELS / "form_schema.json").read_text())
 FIELDS = {f["name"]: f for f in SCHEMA}
@@ -31,7 +31,7 @@ NAMES = {"Cath": "Overall CAD", "LAD": "Left Anterior Descending (LAD)",
          "LCX": "Left Circumflex (LCX)", "RCA": "Right Coronary Artery (RCA)"}
 
 def confidence_label(auc):
-    
+    # data-driven label from cross-validated AUC
     return "high" if auc >= 0.90 else "moderate" if auc >= 0.80 else "low"
 
 DISCLAIMER = ("Decision support / educational use only. Not a substitute for formal "
@@ -42,7 +42,7 @@ NOTE = ("Vessel values are model-estimated probability of >=50% stenosis, "
 # ---------- App ----------
 app = FastAPI(title="Cardio Risk API")
 app.add_middleware(CORSMiddleware,
-                   allow_origins=["http://localhost:5173","http://localhost:5174", "http://localhost:3000"],
+                   allow_origins=["http://localhost:5173", "http://localhost:3000"],
                    allow_methods=["*"], allow_headers=["*"])
 
 class PredictRequest(BaseModel):
@@ -50,12 +50,12 @@ class PredictRequest(BaseModel):
 
 def shap_pos(t, X):
     sv = np.array(EXPLAINER[t].shap_values(X))
-    if sv.ndim == 3:                               # shap version ke hisaab se shape alag
+    if sv.ndim == 3:                               # output shape differs between shap versions
         sv = sv[..., 1] if sv.shape[-1] == 2 else sv[1]
     return sv
 
 def build_row(patient):
-    """Validate + type-cast. Missing fields default se bharte hain."""
+    """Validate and type-cast the input. Missing fields are filled with training defaults."""
     row, defaulted, outside, errors = {}, [], [], []
     for name, f in FIELDS.items():
         if name not in patient or patient[name] in (None, ""):
@@ -64,15 +64,15 @@ def build_row(patient):
         if f["type"] in ("choice", "binary"):
             match = [x for x in f["values"] if str(x).lower() == str(v).lower()]
             if not match:
-                errors.append(f"{name}: {v!r} allowed nahi. Allowed: {f['values']}"); continue
-            row[name] = match[0]                   
+                errors.append(f"{name}: {v!r} is not allowed. Allowed values: {f['values']}"); continue
+            row[name] = match[0]                   # restore the original type (int or str)
         else:
             try:
                 v = float(v)
             except (TypeError, ValueError):
-                errors.append(f"{name}: number chahiye"); continue
+                errors.append(f"{name}: a number is required"); continue
             if not (f["min"] <= v <= f["max"]):
-                outside.append(name)               
+                outside.append(name)               # warn only, do not reject
             row[name] = v
     if errors:
         raise HTTPException(status_code=422, detail=errors)
@@ -112,13 +112,13 @@ def predict(req: PredictRequest):
 
     warnings = []
     if defaulted:
-        warnings.append(f"{len(defaulted)} field(s) default value se bhare gaye.")
+        warnings.append(f"{len(defaulted)} field(s) were filled with default values.")
     if outside:
-        warnings.append(f"Training range ke bahar: {outside}. Prediction kam reliable.")
+        warnings.append(f"Outside the training range: {outside}. The prediction may be less reliable.")
     if max(probs[t] for t in ["LAD", "LCX", "RCA"]) > probs["Cath"] + 0.10:
-        warnings.append("Koi vessel probability overall CAD se zyada hai (models alag hain).")
+        warnings.append("A vessel probability is higher than the overall CAD probability (they come from separate models).")
 
     return {"predictions": out, "defaulted_fields": defaulted, "warnings": warnings,
             "note": NOTE, "disclaimer": DISCLAIMER,
-            "shap_note": "SHAP uncalibrated RF par hai, probability calibrated model se. "
-                         "Ranking aur direction wahi rehti hai, numbers ka jod probability ke barabar nahi."}
+            "shap_note": "SHAP is computed on an uncalibrated random forest, while probabilities come from the "
+                         "calibrated model. Ranking and direction are preserved; values do not sum to the probability."}
