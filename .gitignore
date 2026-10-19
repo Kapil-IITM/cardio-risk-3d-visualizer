@@ -18,6 +18,6 @@ __pycache__/
 *.pt
 *.pth
 
-# Keep the trained model weights (hackathon deliverable)
+
 !ml_pipeline/models/
 !ml_pipeline/models/*.pkl
