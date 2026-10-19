@@ -1,4 +1,4 @@
-import json, sys
+import json, os, sys
 from pathlib import Path
 from typing import Any
 
@@ -41,8 +41,11 @@ NOTE = ("Vessel values are model-estimated probability of >=50% stenosis, "
 
 # ---------- App ----------
 app = FastAPI(title="Cardio Risk API")
+ORIGINS = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
+ORIGINS += [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
 app.add_middleware(CORSMiddleware,
-                   allow_origins=["http://localhost:5173", "http://localhost:3000"],
+                   allow_origins=ORIGINS,
                    allow_methods=["*"], allow_headers=["*"])
 
 class PredictRequest(BaseModel):

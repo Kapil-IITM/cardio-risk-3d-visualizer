@@ -22,3 +22,5 @@ __pycache__/
 !ml_pipeline/models/
 !ml_pipeline/models/*.pkl
 desktop.ini
+
+desktop.ini

@@ -193,15 +193,29 @@ export default function App() {
   const [sel, setSel] = useState("LAD");
   const reqId = useRef(0);
 
-  useEffect(() => {
-    getFeatures()
-      .then((d) => {
-        const def = Object.fromEntries(d.fields.map((f) => [
-          f.name, f.type === "number" ? Number(Number(f.default).toFixed(2)) : f.default,
-        ]));
-        setFields(d.fields); setDefaults(def); setPatient(def);
-      })
-      .catch(() => setError("Cannot reach the backend. Check that the API server is running on port 8001."));
+    useEffect(() => {
+    let cancelled = false;
+    const load = (attempt = 1) => {
+      getFeatures()
+        .then((d) => {
+          if (cancelled) return;
+          const def = Object.fromEntries(d.fields.map((f) => [
+            f.name, f.type === "number" ? Number(Number(f.default).toFixed(2)) : f.default,
+          ]));
+          setFields(d.fields); setDefaults(def); setPatient(def); setError(null);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempt < 12) {
+            setError("Waking up the server. The first load can take about a minute...");
+            setTimeout(() => load(attempt + 1), 5000);
+          } else {
+            setError("Cannot reach the server. Please try again later.");
+          }
+        });
+    };
+    load();
+    return () => { cancelled = true; };
   }, []);
 
   // Re-predict 400 ms after the last change
@@ -214,7 +228,7 @@ export default function App() {
         .then((r) => { if (my === reqId.current) { setResult(r); setError(null); } })
         .catch((e) => { if (my === reqId.current) setError(JSON.stringify(e.detail ?? e)); })
         .finally(() => { if (my === reqId.current) setBusy(false); });
-    }, 400);
+    }, 800);
     return () => clearTimeout(t);
   }, [patient, fields]);
 
